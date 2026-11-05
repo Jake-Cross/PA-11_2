@@ -1,0 +1,331 @@
+---
+title: Classification Models
+jupyter: python3
+---
+
+
+
+## Discussion questions
+
+Suppose you are developing a classification model to determine whether or not a person has a particular disease (based on symptoms, results of diagnostic tests, family history, risk factors, etc).
+
+1. Explain what "precision" represents in this context.
+
+**Discuss with your partner, and make notes here.** Of those that the model predicted positive, the ones who actually tested positive
+
+2. Explain what "recall" represents in this context.
+
+**Discuss with your partner, and make notes here.** Of all those who tested positive, the ones the model correctly predicted positive
+
+3. Which of the following do you think is a more serious error? It's an opinion question, but choose one and discuss.
+
+- Concluding that a person has the disease if they actually don't have it
+- Failing to conclude that a person has the disease if they actually do have it
+
+**Discuss with your partner, and make notes here.** Failing to conclude that a person has the disease, because this delays treatment and endangers the person
+
+4. Given your answer to the previous question, which would you prefer to be higher: precision or recall?
+
+**Discuss with your partner, and make notes here.** Recall, we want to identify as many people as possible that have the disease
+
+5. Suppose you want to achieve higher recall. Should your classification rule be more or less strict about who it predicts to have the disease?
+
+**Discuss with your partner, and make notes here.** Less strict
+
+6. What is a downside to your choice in the previous part?
+
+**Discuss with your partner, and make notes here.** More false positives leading to wasted additional testing resources
+
+```{python}
+import pandas as pd
+import numpy as np
+```
+
+## More wine
+
+The wines data set (https://dlsun.github.io/pods/data/wines.csv ) contains data about the chemical composition of various wines. We'll first use just two features&mdash;fixed acidity and volatile acidity&mdash;to predict the color of the wine (red or white).
+
+```{python}
+df_train = pd.read_csv("https://dlsun.github.io/pods/data/wines.csv")
+
+df_train
+```
+
+```{python}
+from plotnine import *
+
+(
+    ggplot(df_train, aes(x="fixed acidity", y="volatile acidity", color="color"))
+    + geom_point(alpha=0.2)
+    + scale_color_manual(values={"red": "#D55E00", "white": "#0072B2"})
+    + labs(title="Observed wine color")
+    + theme_minimal()
+)
+```
+
+1\. Fit a 15-nearest neighbors model for predicting color from fixed acidity and volatile acidity. Don't forget to scale the features. Create a scatter plot of the predicted wine colors for the training data, and compare visually to the observed colors.
+
+```{python}
+# YOUR CODE HERE
+
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import make_pipeline
+
+# Select predictors and target
+X = df_train[["fixed acidity", "volatile acidity"]]
+y = df_train["color"]
+
+# Scale features and fit 15-nearest neighbors
+knn_wine = make_pipeline(
+    StandardScaler(),
+    KNeighborsClassifier(n_neighbors=15)
+)
+
+knn_wine.fit(X, y)
+
+# Predict wine color for training data
+df_train["predicted_color"] = knn_wine.predict(X)
+
+# Plot predicted wine colors
+(
+    ggplot(df_train, aes(x="fixed acidity", y="volatile acidity",
+                         color="predicted_color"))
+    + geom_point(alpha=0.2)
+    + scale_color_manual(values={"red": "#D55E00", "white": "#0072B2"})
+    + labs(title="Predicted wine color")
+    + theme_minimal()
+)
+```
+
+The predicted plot looks similar to the observed plot, but there is less overlap between red and white wines. The model predicts white wines mostly in areas with lower volatile acidity, while red wines are generally predicted in areas with higher volatile acidity and fixed acidity.
+
+2\. Use 10-fold cross-validation to estimate the test precision, recall, and F1 score using `macro` scoring.
+
+```{python}
+# YOUR CODE HERE
+from sklearn.model_selection import cross_validate
+
+# 10-fold cross-validation
+cv_results = cross_validate(
+    knn_wine,
+    X,
+    y,
+    cv=10,
+    scoring=["precision_macro", "recall_macro", "f1_macro"]
+)
+
+# Average scores across the 10 folds
+print("Precision:", round(cv_results["test_precision_macro"].mean(), 4))
+print("Recall:", round(cv_results["test_recall_macro"].mean(), 4))
+print("F1 Score:", round(cv_results["test_f1_macro"].mean(), 4))
+```
+
+Using 10-fold cross-validation, our model had a macro precision of 88.14%, recall of 85.44%, and F1 score of 86.33%. This shows that our model does a pretty good job of predicting wine color, with precision being slightly higher than recall.
+
+3\. Use `GridSearchCV` to fit $k$-nearest neighbors models for $k=1,\ldots, 30$ and use cross validation to estimate the test F1 macro score. Plot the test score versus $k$. Which value of $k$ yields the best score?
+
+```{python}
+# YOUR CODE HERE
+import matplotlib.pyplot as plt
+from sklearn.model_selection import GridSearchCV
+
+# Test k values from 1 to 30
+param_grid = {
+    "kneighborsclassifier__n_neighbors": range(1, 31)
+}
+
+# Grid search using 10-fold cross-validation
+grid_search = GridSearchCV(
+    knn_wine,
+    param_grid,
+    cv=10,
+    scoring="f1_macro"
+)
+
+# Fit the models
+grid_search.fit(X, y)
+
+# Display best results
+print("Best k:", grid_search.best_params_["kneighborsclassifier__n_neighbors"])
+print("Best F1 Macro:", round(grid_search.best_score_, 4))
+
+# Create dataframe of results
+grid_results = pd.DataFrame(grid_search.cv_results_)
+
+# Plot F1 score versus k
+plt.figure(figsize=(9, 5))
+
+plt.plot(
+    grid_results["param_kneighborsclassifier__n_neighbors"].astype(int),
+    grid_results["mean_test_score"],
+    marker="o"
+)
+
+plt.xlabel("Number of Neighbors (k)")
+plt.ylabel("Cross-Validated F1 Macro Score")
+plt.title("F1 Macro Score vs. Number of Neighbors")
+plt.xticks(range(1, 31, 2))
+plt.grid(True)
+plt.show()
+```
+
+The best value of k was 16, which resulted in an F1 macro score of 86.64%. This was the highest score out of the 30 values tested using 10-fold cross-validation.
+
+4\. When the target variable is binary **logistic regression** provides another classification algorithm.
+
+Fit a logistic regression model for predicting wine color from the two features. Create a scatter plot of the predicted wine colors for the training data, and compare visually to the predictions from the nearest neighbors classifier.
+
+Note: with regression, you don't need to scale the features (unless you add a penalty). Hint: you basically just need to replace with `KNeighborsClassifier()` with `LogisticRegression()`.
+
+```{python}
+from sklearn.linear_model import LogisticRegression
+
+# YOUR CODE HERE
+
+# Fit logistic regression model
+log_model = LogisticRegression(penalty=None, max_iter=1000)
+log_model.fit(X, y)
+
+# Predict wine colors
+df_train["logistic_predicted_color"] = log_model.predict(X)
+
+# Plot predicted wine colors
+(
+    ggplot(df_train, aes(x="fixed acidity", y="volatile acidity",
+                         color="logistic_predicted_color"))
+    + geom_point(alpha=0.2)
+    + scale_color_manual(values={"red": "#D55E00", "white": "#0072B2"})
+    + labs(title="Logistic Regression Predicted Wine Color")
+    + theme_minimal()
+)
+```
+
+The logistic regression predictions look similar to the KNN predictions, but logistic regression creates a straighter separation between red and white wines. KNN has more overlap in the predicted colors because it uses the nearest neighbors, while logistic regression uses the overall relationship between acidity and wine color.
+
+5\. Use 10-fold cross-validation to estimate the test precision, recall, and F1 score of the logistic regression model using `macro` scoring. Compare to the nearest neighbors model.
+
+```{python}
+# YOUR CODE HERE
+
+from sklearn.model_selection import cross_validate
+
+# 10-fold cross-validation for logistic regression
+cv_log = cross_validate(
+    log_model,
+    X,
+    y,
+    cv=10,
+    scoring=["precision_macro", "recall_macro", "f1_macro"]
+)
+
+# Compare logistic regression with KNN
+print("Logistic Regression:")
+print("Precision:", round(cv_log["test_precision_macro"].mean(), 4))
+print("Recall:", round(cv_log["test_recall_macro"].mean(), 4))
+print("F1 Score:", round(cv_log["test_f1_macro"].mean(), 4))
+
+print("\n15-Nearest Neighbors:")
+print("Precision:", round(cv_results["test_precision_macro"].mean(), 4))
+print("Recall:", round(cv_results["test_recall_macro"].mean(), 4))
+print("F1 Score:", round(cv_results["test_f1_macro"].mean(), 4))
+```
+
+Logistic regression performed slightly better than KNN in precision and F1 score, while KNN had slightly higher recall. The scores were very close, but logistic regression had the higher F1 score at 86.46% compared to 86.33% for KNN.
+
+6\. Now fit a logistic regression model using all of the potential predictors. Use 10-fold cross-validation to estimate the test precision, recall, and F1 score of the logistic regression model using `macro` scoring.
+
+```{python}
+# YOUR CODE HERE
+
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import make_pipeline
+from sklearn.model_selection import cross_validate
+
+# Use all predictors except the target and previous predictions
+X_all = df_train.drop(
+    columns=["color", "predicted_color", "logistic_predicted_color"],
+    errors="ignore"
+)
+
+y_all = df_train["color"]
+
+# Logistic regression model
+log_all = make_pipeline(
+    StandardScaler(),
+    LogisticRegression(penalty=None, max_iter=3000)
+)
+
+# Fit the model
+log_all.fit(X_all, y_all)
+
+# 10-fold cross-validation
+cv_all = cross_validate(
+    log_all,
+    X_all,
+    y_all,
+    cv=10,
+    scoring=["precision_macro", "recall_macro", "f1_macro"]
+)
+
+# Display results
+print("All Predictors Logistic Regression:")
+print("Precision:", round(cv_all["test_precision_macro"].mean(), 4))
+print("Recall:", round(cv_all["test_recall_macro"].mean(), 4))
+print("F1 Score:", round(cv_all["test_f1_macro"].mean(), 4))
+
+print("\nPrevious Logistic Regression (2 predictors):")
+print("Precision:", round(cv_log["test_precision_macro"].mean(), 4))
+print("Recall:", round(cv_log["test_recall_macro"].mean(), 4))
+print("F1 Score:", round(cv_log["test_f1_macro"].mean(), 4))
+```
+
+Using all the predictors significantly improved the logistic regression model. Precision increased to 99.23%, recall increased to 98.94%, and the F1 score increased to 99.08%. This shows that the additional wine characteristics help the model predict wine color much more accurately than using only the two acidity variables.
+
+7\. Now fit a logistic regression model using all of the potential predictors with a LASSO (`"l1"`) penalty. Use 10-fold cross-validation to estimate the test precision, recall, and F1 score of the logistic regression model using `macro` scoring.
+
+```{python}
+# YOUR CODE HERE
+
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import make_pipeline
+from sklearn.model_selection import cross_validate
+
+# Logistic regression with LASSO penalty
+lasso_model = make_pipeline(
+    StandardScaler(),
+    LogisticRegression(
+        penalty="l1",
+        solver="liblinear",
+        max_iter=3000
+    )
+)
+
+# Fit model using all predictors
+lasso_model.fit(X_all, y_all)
+
+# 10-fold cross-validation
+cv_lasso = cross_validate(
+    lasso_model,
+    X_all,
+    y_all,
+    cv=10,
+    scoring=["precision_macro", "recall_macro", "f1_macro"]
+)
+
+# Display results
+print("LASSO Logistic Regression:")
+print("Precision:", round(cv_lasso["test_precision_macro"].mean(), 4))
+print("Recall:", round(cv_lasso["test_recall_macro"].mean(), 4))
+print("F1 Score:", round(cv_lasso["test_f1_macro"].mean(), 4))
+
+print("\nPrevious Logistic Regression (No Penalty):")
+print("Precision:", round(cv_all["test_precision_macro"].mean(), 4))
+print("Recall:", round(cv_all["test_recall_macro"].mean(), 4))
+print("F1 Score:", round(cv_all["test_f1_macro"].mean(), 4))
+```
+
+The LASSO model performed slightly better than logistic regression without a penalty. Precision increased to 99.24%, recall increased to 99.11%, and F1 increased to 99.17%. The improvement was small, but LASSO had the highest scores overall.
+
